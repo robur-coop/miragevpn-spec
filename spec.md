@@ -1,3 +1,5 @@
+NCP - negotiable crypto parameters: https://github.com/OpenVPN/openvpn/commit/3a5a46cf2b7f6a8b8520c2513a8054deb48bfcbe
+
 https://openvpn.net/community-resources/openvpn-cryptographic-layer/
 
 This is a technical overview of OpenVPN’s cryptographic layer, and assumes a prior understanding of modern cryptographic concepts. For additional discussion on OpenVPN security, see this FAQ item.

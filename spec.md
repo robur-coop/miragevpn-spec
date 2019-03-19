@@ -1,4 +1,37 @@
-NCP - negotiable crypto parameters: https://github.com/OpenVPN/openvpn/commit/3a5a46cf2b7f6a8b8520c2513a8054deb48bfcbe
+Ciphers (--ncp-ciphers , --cipher)
+  - see manpage under these paragraphs for more info.
+  - NCP - negotiable crypto parameters:
+    https://github.com/OpenVPN/openvpn/commit/3a5a46cf2b7f6a8b8520c2513a8054deb48bfcbe
+  - from openvpn manpage:
+     IV_NCP=2 -- negotiable ciphers, client supports --cipher
+     pushed by the server, a value of 2 or greater indicates client
+     supports AES-GCM-128 and AES-GCM-256.
+  - seems like before this, client/server had to agree on cipher suite in their respective config files using --cipher.
+     - one common suite seems to be AES-128-CBC (seems ok)
+     - the old one was Blowfish (BF-CBC), should avoid that.
+       - manpage under `--cipher` says:
+         The  default  is  BF-CBC, an abbreviation for Blowfish in Cipher
+         Block Chaining mode.  When cipher negotiation (NCP) is  allowed,
+         OpenVPN  2.4 and newer on both client and server side will auto‐
+         matically  upgrade  to  AES-256-GCM.   See   --ncp-ciphers   and
+         --ncp-disable for more details on NCP.
+         Using  BF-CBC  is  no  longer recommended, because of its 64-bit
+         block size.  This small block size allows attacks based on  col‐
+         lisions,   as   demonstrated  by  SWEET32.   See  https://commu‐
+         nity.openvpn.net/openvpn/wiki/SWEET32 for details.  Due to this,
+         support for BF-CBC, DES, CAST5, IDEA and RC2 ciphers will be re‐
+         moved in OpenVPN 2.6.
+
+         To see other ciphers that are available with  OpenVPN,  use  the
+         --show-ciphers option.
+
+        Set alg=none to disable encryption.
+
+
+COMP-LZO: (compression)
+   - according to parapgraph at the very bottom here, this will at some point in the future result in warnings: https://community.openvpn.net/openvpn/wiki/QuarkslabAndCryptographyEngineerAudits
+   - here is the talk that supposedly outlines why it's bad, haven't watched it yet: https://www.blackhat.com/us-18/briefings/schedule/index.html#compression-oracle-attacks-on-vpn-networks-10623
+   - overall seems like we should try to avoid implemention this
 
 https://openvpn.net/community-resources/openvpn-cryptographic-layer/
 

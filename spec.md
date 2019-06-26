@@ -31,7 +31,11 @@ Ciphers (--ncp-ciphers , --cipher)
 COMP-LZO: (compression)
    - according to parapgraph at the very bottom here, this will at some point in the future result in warnings: https://community.openvpn.net/openvpn/wiki/QuarkslabAndCryptographyEngineerAudits
    - here is the talk that supposedly outlines why it's bad, haven't watched it yet: https://www.blackhat.com/us-18/briefings/schedule/index.html#compression-oracle-attacks-on-vpn-networks-10623
-   - overall seems like we should try to avoid implemention this
+   - ~~overall seems like we should try to avoid implemention this~~
+     - since this is not negotiated, we would be unable to speak to servers configured to use LZO if we chose this strategy. Instead we will (when comp-lzo is enabled):
+       - not compress outgoing packets
+       - decompress incoming compressed packets
+   - variant used for compression is lzo1x_1_15_compress, which is LZO1X with 2^15 (=32k) buffer size - see lzo.h:#define LZO_COMPRESS
 
 https://openvpn.net/community-resources/openvpn-cryptographic-layer/
 

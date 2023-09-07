@@ -9,6 +9,8 @@ scope for key exchanges is TLS (i.e. key-method 2), the pre-shared secret mode
 is not described in this document. Not all features and configuration options of
 OpenVPN are covered in this document, nor in the implementation itself.
 
+This document has been updated according to OpenVPN v2.6~rc2.
+
 ## Terminology
 
 ## Protocol overview
@@ -26,6 +28,25 @@ operation, and low 3 bits encode the key identifier. This is followed by the
 actual payload, depending on the operation. The header is prefixed by a two-byte
 length field if TCP is used as transport.
 
+The key identifier: the `key_id` refers to an already negotiated TLS session.
+OpenVPN seamlessly rengotiates the TLS session by using a new `key_id` for the
+new session. Overlap (controlled by user definable parameters) between old and
+new TLS sessions is allowed, providing a seamless transition during tunnel
+operation.
+
+```
+  1 byte header
+ .-------------.
++-+-+-+-+-+-+-+-+
+| | | | | | | | |
++-+-+-+-+-+-+-+-+
+
+| op-code | kid |
+
+op-code: the operation
+kid: the key identifier
+```
+
 The operations are:
 - SOFT_RESET to initialize a rekeying. This is the first packet with a fresh
   key identifier
@@ -35,19 +56,71 @@ The operations are:
 - HARD_RESET_SERVER to answer to a HARD_RESET_CLIENT
 - DATA carrying actual data
 
-All operations apart from DATA share a common header:
-- local SID - 8 byte
+HARD_RESET_{CLIENT,SERVER} has 2 versions. Once the TLS session has been
+initialized and authenticated, the TLS channel is used to exchange random key
+material for bidirectional cipher and HMAC keys which will be used to secure
+data channel packets. OpenVPN currently implements two key methods:
+1) The first method directly derives keys using random bits obtained from the
+   `random()` function.
+2) The second method mixes random key material from both sides of the connection
+  using TLS PRF mixigin function.
+
+The second method is preferred method and is the default for OpenVPN 2.0+. In
+this document, **only** the second method will be mentioned.
+
+```
++-+
+| | = 1 byte
++-+
+
++-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-
+| | | | | | | | | ... | | | | | | | | | | ... | | | | | | | | | ...
++-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-
+|               |     |       |       | |     |               |
+|SID            |HMAC |PKT-ID |TIME   |L|ARR  |Remote SID     |TLS Payload
+
+SID: local session ID
+HMAC: 20 bytes if SHA1 is used
+PKT-ID: packet ID
+TIME: timestamp
+L: length of the packet IDs array
+ARR: 4 bytes * L
+Remote SID: remote session ID
+TLS Payload: only for CONTROL message
+```
+
+All operations apart from DATA share a common header which describe a
+_session ID_:
+- local SID - 8 byte: it's a random 64 bit value to identify TLS session. The
+  TLS server side uses a HMAC of the client to create a pseudo random number for
+  a SYN Cookie like approach.
 - hmac - 20 bytes (depending on hash algo, commonly SHA1)
-- packed id - 4 byte
-- timestamp - 4 byte (seconds since Unix epoch)
-- acked length - 1 byte
-- acked IDs - length * 4 byte
+- packet id - 4 byte
+- timestamp - 4 byte (seconds since Unix epoch). The specification says that
+  this field is optional.
+- acked packet-IDs array length - 1 byte
+- acked packet-IDs - length * 4 byte
 - remote SID - 8 byte (only if acked length > 0)
 - TLS payload (only in control messages)
+
+NOTE: For more details, the `protocol_dump` function specifies the packet
+format.
 
 They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
 packet IDs, remote session ID (only present if acked packet IDs is non-empty),
 message ID, TLS payload.
+
+The DATA packet is described as is:
+```
++-   -+-   -+-
+| ... | ... | ...
++-   -+-   -+-
+|HMAC |IV   |DATA
+
+HMAC: 20 bytes if SHA1 is used
+IV: "block-size" byte(s)
+DATA: padded to "block-size" byte(s)
+```
 
 - hmac - 20 bytes
 - IV - cipher block-size
@@ -55,7 +128,6 @@ message ID, TLS payload.
 
 A DATA packet consists of a HMAC signature, its ciphertext IV, and the actual
 ciphertext.
-
 
 ## Handshake protocol
 

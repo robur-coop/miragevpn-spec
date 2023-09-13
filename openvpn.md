@@ -68,6 +68,27 @@ data channel packets. OpenVPN currently implements two key methods:
 The second method is preferred method and is the default for OpenVPN 2.0+. In
 this document, **only** the second method will be mentioned.
 
+All operations apart from DATA share a common header which describe a
+_session ID_:
+- local SID - 8 bytes: it's a random 64 bit value to identify TLS session. The
+  TLS server side uses a HMAC of the client to create a pseudo random number for
+  a SYN Cookie like approach.
+- hmac - 20 bytes (depending on hash algo, commonly SHA1)
+- packet id - 4 bytes
+- timestamp - 4 bytes (seconds since Unix epoch). The specification says that
+  this field is optional.
+- acked packet-IDs array length - 1 byte
+- acked packet-IDs - length * 4 bytes
+- remote SID - 8 bytes (only if acked length > 0)
+- TLS payload (only in control messages)
+
+NOTE: For more details, the `protocol_dump` function in `src/openvpn/ssl.c`
+specifies the packet format.
+
+They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
+packet IDs, remote session ID (only present if acked packet IDs is non-empty),
+message ID, TLS payload.
+
 ```
 +-+
 | | = 1 byte
@@ -88,27 +109,6 @@ ARR: 4 bytes * L
 Remote SID: remote session ID
 TLS Payload: only for CONTROL message
 ```
-
-All operations apart from DATA share a common header which describe a
-_session ID_:
-- local SID - 8 byte: it's a random 64 bit value to identify TLS session. The
-  TLS server side uses a HMAC of the client to create a pseudo random number for
-  a SYN Cookie like approach.
-- hmac - 20 bytes (depending on hash algo, commonly SHA1)
-- packet id - 4 byte
-- timestamp - 4 byte (seconds since Unix epoch). The specification says that
-  this field is optional.
-- acked packet-IDs array length - 1 byte
-- acked packet-IDs - length * 4 byte
-- remote SID - 8 byte (only if acked length > 0)
-- TLS payload (only in control messages)
-
-NOTE: For more details, the `protocol_dump` function specifies the packet
-format.
-
-They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
-packet IDs, remote session ID (only present if acked packet IDs is non-empty),
-message ID, TLS payload.
 
 The DATA packet is described as is:
 ```

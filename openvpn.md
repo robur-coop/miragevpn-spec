@@ -142,9 +142,9 @@ data.
 ## Encryption / decryption and padding
 
 The purpose of padding is to align data to the cipher block size. The padding
-mechanism is to contain the padding length in each byte, i.e. if the block size
-is 16, and the data 13 bytes, the padding will be 3 bytes containing 0x03 each.
-If the data is already aligned to the block size, an entire block will be
+consists in each byte the padding length, i.e. if the block size is 16, and the
+data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03.  If the data is
+already aligned to the block size, an entire block will be
 appended.
 
 ## Configuration parameters and their interaction

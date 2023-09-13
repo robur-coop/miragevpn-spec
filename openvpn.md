@@ -63,7 +63,7 @@ data channel packets. OpenVPN currently implements two key methods:
 1) The first method directly derives keys using random bits obtained from the
    `random()` function.
 2) The second method mixes random key material from both sides of the connection
-  using TLS PRF mixigin function.
+  using TLS PRF mixing function.
 
 The second method is preferred method and is the default for OpenVPN 2.0+. In
 this document, **only** the second method will be mentioned.

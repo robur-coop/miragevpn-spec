@@ -63,10 +63,31 @@ data channel packets. OpenVPN currently implements two key methods:
 1) The first method directly derives keys using random bits obtained from the
    `random()` function.
 2) The second method mixes random key material from both sides of the connection
-  using TLS PRF mixigin function.
+  using TLS PRF mixing function.
 
 The second method is preferred method and is the default for OpenVPN 2.0+. In
 this document, **only** the second method will be mentioned.
+
+All operations apart from DATA share a common header which describe a
+_session ID_:
+- local SID - 8 bytes: it's a random 64 bit value to identify TLS session. The
+  TLS server side uses a HMAC of the client to create a pseudo random number for
+  a SYN Cookie like approach.
+- hmac - 20 bytes (depending on hash algo, commonly SHA1)
+- packet id - 4 bytes
+- timestamp - 4 bytes (seconds since Unix epoch). The specification says that
+  this field is optional.
+- acked packet-IDs array length - 1 byte
+- acked packet-IDs - length * 4 bytes
+- remote SID - 8 bytes (only if acked length > 0)
+- TLS payload (only in control messages)
+
+NOTE: For more details, the `protocol_dump` function in `src/openvpn/ssl.c`
+specifies the packet format.
+
+They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
+packet IDs, remote session ID (only present if acked packet IDs is non-empty),
+message ID, TLS payload.
 
 ```
 +-+
@@ -88,27 +109,6 @@ ARR: 4 bytes * L
 Remote SID: remote session ID
 TLS Payload: only for CONTROL message
 ```
-
-All operations apart from DATA share a common header which describe a
-_session ID_:
-- local SID - 8 byte: it's a random 64 bit value to identify TLS session. The
-  TLS server side uses a HMAC of the client to create a pseudo random number for
-  a SYN Cookie like approach.
-- hmac - 20 bytes (depending on hash algo, commonly SHA1)
-- packet id - 4 byte
-- timestamp - 4 byte (seconds since Unix epoch). The specification says that
-  this field is optional.
-- acked packet-IDs array length - 1 byte
-- acked packet-IDs - length * 4 byte
-- remote SID - 8 byte (only if acked length > 0)
-- TLS payload (only in control messages)
-
-NOTE: For more details, the `protocol_dump` function specifies the packet
-format.
-
-They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
-packet IDs, remote session ID (only present if acked packet IDs is non-empty),
-message ID, TLS payload.
 
 The DATA packet is described as is:
 ```
@@ -142,9 +142,9 @@ data.
 ## Encryption / decryption and padding
 
 The purpose of padding is to align data to the cipher block size. The padding
-mechanism is to contain the padding length in each byte, i.e. if the block size
-is 16, and the data 13 bytes, the padding will be 3 bytes containing 0x03 each.
-If the data is already aligned to the block size, an entire block will be
+consists in each byte the padding length, i.e. if the block size is 16, and the
+data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03.  If the data is
+already aligned to the block size, an entire block will be
 appended.
 
 ## Configuration parameters and their interaction

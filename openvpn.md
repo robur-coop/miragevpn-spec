@@ -151,7 +151,7 @@ appended.
 
 For initializing a tunnel, first a remote must be selected from the
 configuration. Depending on whether *remote-random* is configured, the list of
-remotes will be randomized or not. A remote consists of a hostname or IP
+remotes will be randomized[^remote-random-bias] or not. A remote consists of a hostname or IP
 address, an optional port (default to 1194) and optional protocol
 (TCP/UDP/TCPv4/UDPv4/TCPv6/UDPv6), defaults to *proto*, filtered depending on
 *force-proto*. If a hostname is configured, this is resolved using DNS, and one
@@ -164,3 +164,10 @@ the optional max argument, default to 300). If *connect-retry-max* is reached
 (defaults to unlimited) without establishing a connection, the client exits.
 
 TODO: resolv-retry
+
+[^remote-random-bias]: Note that OpenVPN uses a *biased* shuffling algorithm,
+  i.e. some remotes permutations are more likely than others.
+  See [`init_connection_list()` in
+  src/openvpn/init.c](https://github.com/OpenVPN/openvpn/blob/0793eb105c5720c4eb31af71c9db81459439e510/src/openvpn/init.c#L474-L498)
+  for the implementation, and the following article for a description of the
+  bias: http://datagenetics.com/blog/november42014/index.html

@@ -170,4 +170,5 @@ TODO: resolv-retry
   See [`init_connection_list()` in
   src/openvpn/init.c](https://github.com/OpenVPN/openvpn/blob/0793eb105c5720c4eb31af71c9db81459439e510/src/openvpn/init.c#L474-L498)
   for the implementation, and the following article for a description of the
-  bias: http://datagenetics.com/blog/november42014/index.html
+  bias: http://datagenetics.com/blog/november42014/index.html. The usage of
+  `get_random() % N` is also biased (although negible for small `N`)

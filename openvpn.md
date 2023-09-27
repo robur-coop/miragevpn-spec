@@ -163,7 +163,42 @@ chosen. If the list of remotes is all tried, the client waits for at least
 the optional max argument, default to 300). If *connect-retry-max* is reached
 (defaults to unlimited) without establishing a connection, the client exits.
 
-TODO: resolv-retry
+`--resolv-retry` specifies the time spent to retry a DNS resolution in seconds.
+The user is able to specify unlimited time and OpenVPN will retry indefinitely
+or the user can disable the retry via `--resolv-retry=0`.
+
+## TLS crypt v2
+
+The server has a key and the first message between the client -> server is
+encrypted via this key. The first message contains the client's key and next
+packets between the client -> server will be encrypted via the client's key.
+
+```
+0: client -> packet encrypted with the server's key -> server
+2: client -> packet encrypted with the client's key -> server
+...
+```
+
+`P_CONTROL_HARD_RESET_CLIENT_V3` is added to have a smooth transition between
+`--tls-auth`/`--tls-crypt` and `--tls-crypt-v2`.
+
+The protocol works like that:
+
+1) The client has a key [Kc].
+2) It "wraps" this key with [Ke], the key of the server such as:
+   `WKc = T || AES-256-CTR(Ke, IV, Kc || metadata) || len`
+
+3) The client send (->) [P_CONTROL_HARD_RESET_CLIENT_V3] wrapped with [Kc]
+   plus [WKc] (which is **not** wrapped)
+4) The server receives (<-) the message:
+  - reads the [WKc] length field from the end of the message
+  - extract [WKc] from the message
+  - unwraps [WKc] (with [Ke])
+  - uses [Kc] to verify [P_CONTROL_HARD_RESET_CLIENT_V3]
+5) if something fails, we **don't** tell the client about that (DoS protection)
+6) server can check metadata (see `--tls-crypt-v2-verify`), we verify them only
+   **after** the TLS handshake
+7) Client and server use [Kc] for any data through the control channel
 
 [^remote-random-bias]: Note that OpenVPN uses a *biased* shuffling algorithm,
   i.e. some remotes permutations are more likely than others.

@@ -165,6 +165,32 @@ the optional max argument, default to 300). If *connect-retry-max* is reached
 
 TODO: resolv-retry
 
+## OpenVPN static keys
+
+OpenVPN has a concept of static keys which is 2048 bits, or in some cases 1024 bits, of random data.
+A 2048 bit (256 byte) key is a pair of two directional keys, each of 1024 bits (128 bytes).
+Each directional key is yet another pair (`Ke, Ka)` of 512 bits (64 bytes) each.
+`Ke` is the key used for the symmetrical cipher, and `Ka` is used for the hmac if not using an AEAD cipher.
+The first *N* bytes of `Ke` are used as the key for the cipher where *N* is the key size of the cipher.
+As well for `Ka` only the first *M* bytes are used as key for the hmac where *M* depends on the hash.
+For SHA1 the key size is 20 bytes, for example.
+
+### Endianness
+The OpenVPN documentation sometimes says to use the *K* most significant bits as key.
+This is slightly confusing as they never mention the endianness.
+Apparently they mean big endian, so in other words you use the first *K*/8 bytes as key.
+
+### Direction
+
+OpenVPN operates with a sense of direction for the keys.
+This means that one key pair is used for encrypting and authenticating remote packets and the other is used for the local packets.
+**TODO:** figure out what direction 0 and 1 means for the key pairs.
+
+### File format
+
+The file format used to store OpenVPN static keys looks on the surface as if they are PEM-encoded starting with `-----BEGIN OpenVPN Static key V1-----` and ending with `-----END OpenVPN Static key V1-----` but unlike PEM the body is a hexadecimal encoding (instead of base64 encoding) of the keys concatenated.
+Anything before the header and after the footer is ignored.
+
 [^remote-random-bias]: Note that OpenVPN uses a *biased* shuffling algorithm,
   i.e. some remotes permutations are more likely than others.
   See [`init_connection_list()` in

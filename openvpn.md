@@ -56,6 +56,14 @@ your traffic, you are advised to not enable compression.
 For compatibility with existing configurations, we support LZO compression on
 the receiving side.
 
+### Ciphers
+
+For the static mode, only AES-256-CBC is supported (configuration directive
+`cipher`).
+
+For the tls mode, only AEAD ciphers are supported, namely AES-128-GCM,
+AES-256-GCM, and CHACHA20-POLY1305 (configuration directive `data-ciphers`).
+
 ## Static mode
 
 In the static mode, there is no control channel. Every data packet is encrypted
@@ -130,6 +138,11 @@ The encrypted packet consists of:
 - packet ID (4 byte),
 - timestamp (only in static mode, 4 byte - seconds since UNIX epoch),
 - and the data.
+
+The encrypted packet is padded to be aligned to the cipher block size. The
+padding consists in each byte the padding length, i.e. if the block size is 16,
+and the data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03. If the data
+is already aligned to the block size, an entire block will be appended.
 
 ### AEAD
 
@@ -247,14 +260,6 @@ control channel for tunnel teardown or initiating a key exchange for rekeying
 the tunnel. Multiple keys may be active at the same time, which is especially
 useful for handing over from old keys to new keys without loosing in-flight
 data.
-
-## Encryption / decryption and padding
-
-The purpose of padding is to align data to the cipher block size. The padding
-consists in each byte the padding length, i.e. if the block size is 16, and the
-data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03.  If the data is
-already aligned to the block size, an entire block will be
-appended.
 
 ## Configuration parameters and their interaction
 

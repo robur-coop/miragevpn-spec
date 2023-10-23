@@ -163,7 +163,61 @@ chosen. If the list of remotes is all tried, the client waits for at least
 the optional max argument, default to 300). If *connect-retry-max* is reached
 (defaults to unlimited) without establishing a connection, the client exits.
 
-TODO: resolv-retry
+`--resolv-retry` specifies the time spent to retry a DNS resolution in seconds.
+The user is able to specify unlimited time and OpenVPN will retry indefinitely
+or the user can disable the retry via `--resolv-retry=0`.
+
+## TLS crypt v2
+
+`tls-crypt-v2` adds encryption in addition to hmac authentication of the control channel.
+Like with `tls-auth` the hmac authentication serves to protect the TLS stack from adversaries who do not have the authentication key.
+The encryption layer in `tls-crypt-v2` (and `tls-crypt`) serves to keep the TLS handshake confidential so as to not reveal information from certificates to eavesdroppers.
+
+In `tls-crypt`, which this spec will not cover much, the keys are shared between the server and all clients thus one client could eavesdrop on another client's TLS handshake with the server.
+In `tls-crypt-v2` the server has a set of keys which are used when creating client keys.
+A client key is a 'regular' OpenVPN static key along with the same client key wrapped using the server's keys.
+In other words, the client has a key along with some data that is opaque to the client.
+The opaque-to-the-client data is the client's key and some metadata encrypted and authenticated using the server's key.
+
+On connection the client sends a message encrypted using its key and appends in plaintext the wrapped key.
+The server can then unwrap (decrypt and authenticate) the client key and continue.
+
+`P_CONTROL_HARD_RESET_CLIENT_V3` is added to have a smooth transition between
+`--tls-auth`/`--tls-crypt` and `--tls-crypt-v2`.
+
+The protocol works like that:
+
+1) The server has a key `(Ke, Ka)`. The client has a key `Kc` and the the "wrapped" key `wKc`.
+2) To the client it is opaque what `wKc` is and is sent to the server as-is.
+   To the server `wKc` is wrapped with the key of the server `(Ke, Ka)` such as:
+   `WKc = T || AES-256-CTR(Ke, IV, Kc || metadata) || len`
+   where `T = HMAC-SHA256(Ka, len || Kc || metadata)`,
+   `IV` is the 128 most significant bits of `T` (first 16 bytes of `T`) and
+   `len` is the length of `wKc` as a 16 bit big endian integer which can be
+   computed by adding the length of the client key, the length of the metadata,
+   the hmac size and the size of the length field itself (two bytes).
+3) The client sends (->) `P_CONTROL_HARD_RESET_CLIENT_V3` wrapped with `Kc`
+   plus `WKc` (which is **not** wrapped)
+4) The server receives (<-) the message:
+  - reads the `WKc` length field from the end of the message
+  - extract `WKc` from the message
+  - unwraps `WKc` (with `Ke`) in order to obtain `Kc`
+  - uses `Kc` to verify `P_CONTROL_HARD_RESET_CLIENT_V3`
+5) if something fails, the server **doesn't** tell the client about that (DoS protection)
+6) server can check metadata (see `--tls-crypt-v2-verify`), we verify them only
+   **after** the TLS handshake
+7) Client and server use `Kc` for any data through the control channel
+
+### Metadata
+The metadata in `wKc` comes in two types tagged with a single byte:
+- `USER`/`0x00` - user-defined data, and
+- `TIMESTAMP`/`0x01` - 64-bit unix timestamp
+The length of the metadata when unwrapping can be deduced by `len` and the
+fixed sizes of `T` and `Kc`.
+
+As examples of `tls-crypt-v2-verify` scripts they suggest to reject keys older
+than N days, or for `USER` metadata to embed the certificate serial and check
+it up against a CRL.
 
 ## OpenVPN static keys
 

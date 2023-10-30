@@ -80,6 +80,10 @@ straightforward to think about.
 The configuration must contain the directives `secret <file|inline>` and
 `ifconfig <my-ip> <their-ip>`. The only supported `cipher` is `AES-256-CBC`.
 
+Since the connection only contains the data channel, there is no header (i.e.
+the packet wire format described below for TLS mode). Continue reading with the
+"Data channel" section below.
+
 ## TLS mode
 
 In TLS mode, first a TLS handshake is established - and the provided

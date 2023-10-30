@@ -163,7 +163,7 @@ The control channel can optionally be authenticated and encrypted:
   control packet,
 - the `tls-crypt` directive contains a pre-shared key for authentication and
   encryption of each control packet,
-- the `tls-crypt-v2` directive contains a client-specigic key for authentication
+- the `tls-crypt-v2` directive contains a client-specific key for authentication
   and encryption of each control packet.
 
 The authentication algorithm to use is specified by the `auth` directive, and

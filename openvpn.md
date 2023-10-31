@@ -2,16 +2,17 @@
 
 ## Status
 
-This describes a subset of the protocol as implemented in OpenVPN 2.4.7. The
-original motivation is to document for interoperability of a newly developed
-OpenVPN client with existing servers, reusing existing configuration files.  The
-scope for key exchanges is TLS (i.e. key-method 2), the pre-shared secret mode
-is not described in this document. Not all features and configuration options of
-OpenVPN are covered in this document, nor in the implementation itself.
+This describes a subset of the protocol as implemented in OpenVPN 2.6.6. The
+original motivation is to document for interoperability of MirageVPN, a newly
+developed OpenVPN-compatible client with existing servers, reusing existing
+configuration files. Initially, the client was developed with OpenVPN 2.4.7 in
+mind. Not all features and configuration options of OpenVPN are covered in this
+document, nor in the implementation itself.
 
-This document has been updated according to OpenVPN v2.6~rc2.
-
-## Terminology
+The development of MirageVPN and this document was funded by
+[Prototypefund](https://prototypefund.de) in 2019 - the German ministry for
+research and education, and by NLnet in 2023 (via the December 2022 EU NGI
+Assure call).
 
 ## Protocol overview
 
@@ -21,18 +22,90 @@ can be established via UDP or TCP. Two kinds of packets are distinguished:
 control packets that are reliably transfered (acknowledged and retransmitted),
 and data packets. Data packets are only accepted once a tunnel is established.
 
+There are two modes of cryptographic operations that we support: static
+cryptographic keys (in this document named "static"), where no handshake is
+necessary and all key material is in the configuration (downside being no
+forward secrecy), in contrast to ephemeral keys (in this document named "tls"),
+which are negotiated during each handshake (and may be rekeyed - i.e. fresh key
+material being negotiated). Another set of modes is the network topology:
+peer-to-peer mode, where one peer connects with exactly one other peer; and a
+traditional client-server mode, where multiple clients connect to a single
+server.
+
+In the "static" mode, only the peer-to-peer topology is supported - thus no
+dynamic IP address configuration is needed.
+
+## Implementation choices
+
+We do not support all features of OpenVPN - while we strive to support more
+features, some of the features we will never support:
+
+### Compression
+
+We do not support compression for sending data, since there are attacks - from
+the OpenVPN manual page:
+```
+Compression and encryption is a tricky combination. If an attacker knows or is
+able to control (parts of) the plain-text of packets that contain secrets, the
+attacker might be able to extract the secret if compression is enabled. See e.g.
+the CRIME and BREACH attacks on TLS and VORACLE on VPNs which also leverage to
+break encryption. If you are not entirely sure that the above does not apply to
+your traffic, you are advised to not enable compression.
+```
+
+For compatibility with existing configurations, we support LZO compression on
+the receiving side.
+
+### Ciphers
+
+For the static mode, only AES-256-CBC is supported (configuration directive
+`cipher`).
+
+For the tls mode, only AEAD ciphers are supported, namely AES-128-GCM,
+AES-256-GCM, and CHACHA20-POLY1305 (configuration directive `data-ciphers`).
+
+## Static mode
+
+In the static mode, there is no control channel. Every data packet is encrypted
+and authenticated with the pre-shared keys (in the configuration file). To avoid
+nonce reuse (for AEAD ciphers), only CBC ciphers are supported. There is no
+support for client-server network topology. A warning is issued by MirageVPN
+that there is a lack of forward security.
+
+The advantage of the static mode is that it is easy to setup and there is not
+even a TLS library required as dependency. Since the configuration is static,
+there are not many things that may go wrong. It is easy to reason about, and
+straightforward to think about.
+
+The configuration must contain the directives `secret <file|inline>` and
+`ifconfig <my-ip> <their-ip>`. The only supported `cipher` is `AES-256-CBC`.
+
+Since the connection only contains the data channel, there is no header (i.e.
+the packet wire format described below for TLS mode). Continue reading with the
+"Data channel" section below.
+
+## TLS mode
+
+In TLS mode, first a TLS handshake is established - and the provided
+certificates (server-only or mutually) are validated. The ephemeral
+cryptographic keys are negotiated once the TLS session is established. The
+connection (TCP or UDP) multiplexes both the control channel (carrying the TLS
+handshake and ephemeral keying data) and the data channel. At any point, any
+peer may decide to re-negotiate the cryptographic key material by utilizing the
+control channel.
+
 ## Packet wire format
 
 Each OpenVPN packet consists of a one-byte header, which high 5 bits encode the
-operation, and low 3 bits encode the key identifier. This is followed by the
-actual payload, depending on the operation. The header is prefixed by a two-byte
-length field if TCP is used as transport.
+operation ("op-code"), and low 3 bits encode the key identifier ("kid"). This is
+followed by the actual payload, depending on the operation. If TCP is used as
+transport, the header is prefixed by a two-byte length field.
 
-The key identifier: the `key_id` refers to an already negotiated TLS session.
-OpenVPN seamlessly rengotiates the TLS session by using a new `key_id` for the
-new session. Overlap (controlled by user definable parameters) between old and
-new TLS sessions is allowed, providing a seamless transition during tunnel
-operation.
+The key identifier: the key identifier refers to an already negotiated TLS
+session. OpenVPN seamlessly renegotiates the TLS session by using a new key
+identifier for the new session. Overlap (controlled by user definable
+parameters) between old and new TLS sessions is allowed, providing a seamless
+transition during tunnel operation.
 
 ```
   1 byte header
@@ -47,16 +120,88 @@ op-code: the operation
 kid: the key identifier
 ```
 
-The operations are:
-- SOFT_RESET to initialize a rekeying. This is the first packet with a fresh
-  key identifier
-- CONTROL which carry a TLS payload
-- ACK for acknowledgement packets
-- HARD_RESET_CLIENT to initiate a new connection
-- HARD_RESET_SERVER to answer to a HARD_RESET_CLIENT
-- DATA carrying actual data
+The operation can be grouped into "data", "acknowledgement", and "control".
 
-HARD_RESET_{CLIENT,SERVER} has 2 versions. Once the TLS session has been
+The data channel is always authenticated (either with a HMAC if the cipher is
+CBC - where first encryption, and then the authentication is applied; or
+directly with an AEAD cipher) and encrypted.
+
+## Data channel
+
+The data channel packet layout depends on the mode. If compression is used, the
+first byte of the data specifies the algorithm (0xFA for the null compression).
+
+### CBC
+
+The packet consists of:
+- the hmac over the IV and the encrypted packet (depends on the hmac algorithm),
+- the IV for the packet (16 byte),
+- and the encrypted packet.
+
+The encrypted packet consists of:
+- packet ID (4 byte),
+- timestamp (only in static mode, 4 byte - seconds since UNIX epoch),
+- and the data.
+
+The encrypted packet is padded to be aligned to the cipher block size. The
+padding consists in each byte the padding length, i.e. if the block size is 16,
+and the data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03. If the data
+is already aligned to the block size, an entire block will be appended.
+
+### AEAD
+
+The packet consists of:
+- packet ID (4 byte),
+- authentication tag (16 byte),
+- and the data.
+
+The nonce is 12 byte long, and consists of the packet_id prepended to the
+implicit IV (from the ephemeral keys). As authentic data the packet id is used.
+
+## Control channel
+
+### Authentication and encryption of the control channel
+
+The control channel can optionally be authenticated and encrypted:
+- The `tls-auth` directive contains a pre-shared key for authentication of each
+  control packet,
+- the `tls-crypt` directive contains a pre-shared key for authentication and
+  encryption of each control packet,
+- the `tls-crypt-v2` directive contains a client-specific key for authentication
+  and encryption of each control packet.
+
+The authentication algorithm to use is specified by the `auth` directive, and
+different hash algorithms from the SHA family are supported.
+
+Authenticating the control channel mitigates denial-of-service (DoS) attacks,
+since each incoming packet can quickly be checked whether it is originated by
+a peer that knows the pre-shared key.
+
+The `tls-crypt` mode additionally encrypts the control channel using a
+pre-shared key (which is used by all clients). The `tls-crypt-v2` mode uses for
+each client a distinct pre-shared key.
+
+The advantage of encrypting the control channel is that certificates, exchanged
+in the TLS handshake, are protected (TLS since 1.3 already encrypts
+certificates), it makes it harder to identify OpenVPN traffic, and protects
+against attackers who never know the pre-shared key (by quickly discarding
+data).
+
+The wire format of the control packets depend on the above configuration options
+in place.
+
+### Operations
+
+The operations are:
+- `SOFT_RESET` to initialize a rekeying. This is the first packet with a fresh
+  key identifier
+- `CONTROL` which carry a TLS payload
+- `ACK` for acknowledgement packets
+- `HARD_RESET_CLIENT` to initiate a new connection
+- `HARD_RESET_SERVER` to answer to a `HARD_RESET_CLIENT`
+- `DATA` carrying actual data
+
+`HARD_RESET_{CLIENT,SERVER}` has 2 versions. Once the TLS session has been
 initialized and authenticated, the TLS channel is used to exchange random key
 material for bidirectional cipher and HMAC keys which will be used to secure
 data channel packets. OpenVPN currently implements two key methods:
@@ -110,25 +255,6 @@ Remote SID: remote session ID
 TLS Payload: only for CONTROL message
 ```
 
-The DATA packet is described as is:
-```
-+-   -+-   -+-
-| ... | ... | ...
-+-   -+-   -+-
-|HMAC |IV   |DATA
-
-HMAC: 20 bytes if SHA1 is used
-IV: "block-size" byte(s)
-DATA: padded to "block-size" byte(s)
-```
-
-- hmac - 20 bytes
-- IV - cipher block-size
-- data - padded to block-size
-
-A DATA packet consists of a HMAC signature, its ciphertext IV, and the actual
-ciphertext.
-
 ## Handshake protocol
 
 Key establishment and configuration synchronization is achieved by a TLS
@@ -138,14 +264,6 @@ control channel for tunnel teardown or initiating a key exchange for rekeying
 the tunnel. Multiple keys may be active at the same time, which is especially
 useful for handing over from old keys to new keys without loosing in-flight
 data.
-
-## Encryption / decryption and padding
-
-The purpose of padding is to align data to the cipher block size. The padding
-consists in each byte the padding length, i.e. if the block size is 16, and the
-data 13 bytes, the padding will be 3 bytes 0x03, 0x03, 0x03.  If the data is
-already aligned to the block size, an entire block will be
-appended.
 
 ## Configuration parameters and their interaction
 

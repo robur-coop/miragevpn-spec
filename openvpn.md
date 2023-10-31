@@ -105,7 +105,9 @@ The key identifier: the key identifier refers to an already negotiated TLS
 session. OpenVPN seamlessly renegotiates the TLS session by using a new key
 identifier for the new session. Overlap (controlled by user definable
 parameters) between old and new TLS sessions is allowed, providing a seamless
-transition during tunnel operation.
+transition during tunnel operation. The key identifier 0 is special and is only
+and always used for the first session. Key identifiers 1-7 are used for
+renegotiated sessions, and wraps around from 7 to 1 skipping 0.
 
 ```
   1 byte header

@@ -202,7 +202,9 @@ supports hash algorithms of the SHA family.
 
 The `tls-crypt` mode additionally encrypts the control channel using a
 pre-shared key (which is shared amongst all clients). The `tls-crypt-v2` mode
-uses for each client a distinct pre-shared key.
+uses for each client a distinct pre-shared key. For both `tls-crypt` and
+`tls-crypt-v2` the cipher and hmac algorithm is fixed to AES-256-CBC and SHA256
+HMAC respectively.
 
 The wire format of the control packets depend on the above configuration options
 in place.
@@ -239,8 +241,9 @@ with the gap-free sequence number monotonically increasing.
 The TLS auth header contains a hmac and a replay id (also known as replay
 packet id in OpenVPN, consisting of a 4 byte id and a 4 byte timestamp), which
 are put just after the own session ID. The size of the hmac depends on the hmac
-algorithm being used. The hmac key is the same length as the hmac output, it is
-pre-shared between all clients and the server.
+algorithm being used - configured by the `auth` directive. The hmac key is the
+same length as the hmac output, it is pre-shared between all clients and the
+server.
 
 ```
  h .---own SID---. hmac .--replay ID--. n ack .-peer SID?-. .-seq-.

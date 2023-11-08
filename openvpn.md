@@ -162,7 +162,7 @@ The packet consists of:
 - authentication tag (16 byte),
 - and the data.
 
-The nonce is 12 byte long, and consists of the packet_id prepended to the
+The nonce is 12 byte long, and consists of the replay id prepended to the
 implicit IV (from the ephemeral keys). As associated data the replay id is used.
 
 ## Control channel

@@ -146,7 +146,7 @@ The packet consists of:
 - and the encrypted packet.
 
 The encrypted packet consists of:
-- packet ID (4 byte),
+- replay ID (4 byte) - also named replay packet ID in OpenVPN,
 - timestamp (only in static mode, 4 byte - seconds since UNIX epoch),
 - and the data.
 
@@ -158,12 +158,12 @@ is already aligned to the block size, an entire block will be appended.
 ### AEAD
 
 The packet consists of:
-- packet ID (4 byte),
+- replay ID (4 byte) - also named replay packet ID in OpenVPN,
 - authentication tag (16 byte),
 - and the data.
 
 The nonce is 12 byte long, and consists of the packet_id prepended to the
-implicit IV (from the ephemeral keys). As associated data the packet id is used.
+implicit IV (from the ephemeral keys). As associated data the replay id is used.
 
 ## Control channel
 
@@ -215,33 +215,34 @@ The plain header is shown below:
 +-+
 
 
- h .---own SID---. n ack .-peer SID?-. .-pID-.
+ h .---own SID---. n ack .-peer SID?-. .-seq-.
 +-+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
 | | | | | | | | | | |...| | | | | | | | | | | |
 +-+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
 
 h - one byte header (described above)
 own SID - own session ID
-n - number of ACKed packet IDs
-ack - list of ACKed packet IDs (length is n * 4)
+n - number of ACKed sequence numbers
+ack - list of ACKed sequence numbers (length is n * 4)
 peer SID? - peer session ID (only if n > 0)
-pID - packet ID
+seq - sequence number
 ```
 
 The session IDs are opaque (random 64 bit) values for identifying the TLS
-session. Each peer uses a separate counter for the packet IDs, starting at 0.
-The control packets must be sequential, with the gap-free packet ID
-monotonically increasing.
+session. Each peer uses a separate counter for the sequence numbers (also named
+packet id in OpenVPN), starting at 0. The control packets must be sequential,
+with the gap-free sequence number monotonically increasing.
 
 ### TLS auth header
 
-The TLS auth header contains a hmac and a replay_packet_id, which are put just
-after the own session ID. The size of the hmac depends on the hmac algorithm
-being used. The hmac key is the same length as the hmac output, it is pre-shared
-between all clients and the server.
+The TLS auth header contains a hmac and a replay id (also known as replay
+packet id in OpenVPN, consisting of a 4 byte id and a 4 byte timestamp), which
+are put just after the own session ID. The size of the hmac depends on the hmac
+algorithm being used. The hmac key is the same length as the hmac output, it is
+pre-shared between all clients and the server.
 
 ```
- h .---own SID---. hmac .--replay ID--. n ack .-peer SID?-. .-pID-.
+ h .---own SID---. hmac .--replay ID--. n ack .-peer SID?-. .-seq-.
 +-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
 | | | | | | | | | |....| | | | | | | | | |...| | | | | | | | | | | |
 +-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
@@ -254,10 +255,10 @@ The hmac is computed over the pseudo-header consisting of:
 - replay ID (a 4 byte ID and 4 byte timestamp)
 - one-byte header
 - own session ID
-- n - the number of ACKed packet IDs
-- list of acked packet IDs
+- n - the number of ACKed sequence numbers
+- list of acked sequence numbers
 - peer session ID (if n > 0)
-- packet ID
+- sequence number
 
 When the hmac does not match, an implementation must discard the packet.
 

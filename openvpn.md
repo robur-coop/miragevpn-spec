@@ -64,6 +64,32 @@ For the static mode, only AES-256-CBC is supported (configuration directive
 For the tls mode, only AEAD ciphers are supported, namely AES-128-GCM,
 AES-256-GCM, and CHACHA20-POLY1305 (configuration directive `data-ciphers`).
 
+### Terminology
+
+#### OpenVPN replay packet id - MirageVPN replay id
+
+OpenVPN defines a "replay_packet_id", which is a uint32 value, usually combined
+with another uint32 value, the timestamp. The purpose of this is that an
+attacker is not able to replay a packet to the client or server. The invariant
+is that the replay packet id must increase for each packet being sent. We use
+the term "replay ID" for the uint32 counter, and always treat the timestamp
+separately.
+
+#### OpenVPN packet id - MirageVPN sequence number
+
+OpenVPN defines the term "packet id" as a uint32 value which is part of every
+control packet (apart from acknowledgements). The purpose is to have a strict
+gap-free sequence of control packets (especially when using UDP and
+retransmissions are necessary).
+
+We use (due to confusion with "replay packet id") the term sequence number for
+this monotonically increasing number that is attached to control packets.
+
+## Transport
+
+If TCP is used as transport, the header is prefixed by a two-byte length field.
+Below, we focus on UDP, where no header length is prefixed.
+
 ## Static mode
 
 In the static mode, there is no control channel. Every data packet is encrypted
@@ -80,9 +106,8 @@ straightforward to think about.
 The configuration must contain the directives `secret <file|inline>` and
 `ifconfig <my-ip> <their-ip>`. The only supported `cipher` is `AES-256-CBC`.
 
-Since the connection only contains the data channel, there is no header (i.e.
-the packet wire format described below for TLS mode). Continue reading with the
-"Data channel" section below.
+There is no control channel in static mode, only the data channel. This means
+there is also no one-byte header described below for the TLS mode.
 
 ## TLS mode
 
@@ -94,12 +119,11 @@ handshake and ephemeral keying data) and the data channel. At any point, any
 peer may decide to re-negotiate the cryptographic key material by utilizing the
 control channel.
 
-## Packet wire format
+### Packet wire format
 
-Each OpenVPN packet consists of a one-byte header, which high 5 bits encode the
-operation ("op-code"), and low 3 bits encode the key identifier ("kid"). This is
-followed by the actual payload, depending on the operation. If TCP is used as
-transport, the header is prefixed by a two-byte length field.
+Each OpenVPN packet in TLS mode consists of a one-byte header, which high 5 bits
+encode the operation ("op-code"), and low 3 bits encode the key identifier
+("kid"). This is followed by the actual payload, depending on the operation.
 
 The key identifier: the key identifier refers to an already negotiated TLS
 session. OpenVPN seamlessly renegotiates the TLS session by using a new key
@@ -110,38 +134,40 @@ and always used for the first session. Key identifiers 1-7 are used for
 renegotiated sessions, and wraps around from 7 to 1 skipping 0.
 
 ```
++-+
+| | - 1 bit
++-+
+
   1 byte header
  .-------------.
 +-+-+-+-+-+-+-+-+
 | | | | | | | | |
 +-+-+-+-+-+-+-+-+
-
 | op-code | kid |
 
 op-code: the operation
 kid: the key identifier
 ```
 
-The operation can be grouped into "data", "acknowledgement", and "control".
-
-The data channel is always authenticated (either with a HMAC if the cipher is
-CBC - where first encryption, and then the authentication is applied; or
-directly with an AEAD cipher) and encrypted.
+The operation are be grouped into "data", "acknowledgement", and "control".
 
 ## Data channel
 
 The data channel packet layout depends on the mode. If compression is used, the
 first byte of the data specifies the algorithm (0xFA for the null compression).
 
+The data channel is always authenticated (either with a HMAC if the cipher is
+CBC; or with an AEAD cipher) and encrypted.
+
 ### CBC
 
 The packet consists of:
-- the hmac over the IV and the encrypted packet (depends on the hmac algorithm),
+- the hmac over IV and encrypted packet (configured by the `auth` directive),
 - the IV for the packet (16 byte),
 - and the encrypted packet.
 
 The encrypted packet consists of:
-- packet ID (4 byte),
+- replay ID (4 byte)
 - timestamp (only in static mode, 4 byte - seconds since UNIX epoch),
 - and the data.
 
@@ -153,35 +179,30 @@ is already aligned to the block size, an entire block will be appended.
 ### AEAD
 
 The packet consists of:
-- packet ID (4 byte),
+- replay ID (4 byte)
 - authentication tag (16 byte),
 - and the data.
 
-The nonce is 12 byte long, and consists of the packet_id prepended to the
-implicit IV (from the ephemeral keys). As authentic data the packet id is used.
+The nonce is 12 byte long, and consists of the replay id prepended to the
+implicit IV (from the ephemeral keys). As associated data the replay id is used.
 
 ## Control channel
 
+The purpose of the control channel is to negotiate ephemeral keys, authenticate,
+and negotiation of other settings (timeouts, rekeying intervals, IP addresses,
+..) of the tunnel. The control channel can be *further* authenticated and
+encrypted using several mechanisms described below. Initially, a TLS connection
+is established over the control channel, and then parameters are negotiated.
+The client authentication can be via X.509 client certificates (as part of the
+TLS handshake) or username and password (once the TLS session is established).
+The server is always authenticated via an X.509 server certificate.
+
 ### Authentication and encryption of the control channel
 
-The control channel can optionally be authenticated and encrypted:
-- The `tls-auth` directive contains a pre-shared key for authentication of each
-  control packet,
-- the `tls-crypt` directive contains a pre-shared key for authentication and
-  encryption of each control packet,
-- the `tls-crypt-v2` directive contains a client-specific key for authentication
-  and encryption of each control packet.
-
-The authentication algorithm to use is specified by the `auth` directive, and
-different hash algorithms from the SHA family are supported.
-
-Authenticating the control channel mitigates denial-of-service (DoS) attacks,
-since each incoming packet can quickly be checked whether it is originated by
-a peer that knows the pre-shared key.
-
-The `tls-crypt` mode additionally encrypts the control channel using a
-pre-shared key (which is used by all clients). The `tls-crypt-v2` mode uses for
-each client a distinct pre-shared key.
+The purpose of authentication of the control channel is reduction of the attack
+surface of the server and reduction of the load (avoiding denial of service
+attacks) on the server -- i.e. no code of the (potentially vulnerable) TLS
+library is executed if the control packet is not properly authenticated.
 
 The advantage of encrypting the control channel is that certificates, exchanged
 in the TLS handshake, are protected (TLS since 1.3 already encrypts
@@ -189,8 +210,85 @@ certificates), it makes it harder to identify OpenVPN traffic, and protects
 against attackers who never know the pre-shared key (by quickly discarding
 data).
 
+The different specified mechanisms are:
+- The `tls-auth` directive contains a pre-shared key for authentication of each
+  control packet,
+- the `tls-crypt` directive contains a pre-shared key for authentication and
+  encryption of each control packet,
+- the `tls-crypt-v2` directive contains a client-specific key for authentication
+  and encryption of each control packet.
+
+The authentication algorithm to use is specified by the `auth` directive, which
+supports hash algorithms of the SHA family.
+
+The `tls-crypt` mode additionally encrypts the control channel using a
+pre-shared key (which is shared amongst all clients). The `tls-crypt-v2` mode
+uses for each client a distinct pre-shared key. For both `tls-crypt` and
+`tls-crypt-v2` the cipher and hmac algorithm is fixed to AES-256-CBC and SHA256
+HMAC respectively.
+
 The wire format of the control packets depend on the above configuration options
 in place.
+
+### Plain header
+
+The plain header is shown below:
+```
++-+
+| | - 1 byte
++-+
+
+
+ h .---own SID---. n ack .-peer SID?-. .-seq-.
++-+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
+| | | | | | | | | | |...| | | | | | | | | | | |
++-+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
+
+h - one byte header (described above)
+own SID - own session ID
+n - number of ACKed sequence numbers
+ack - list of ACKed sequence numbers (length is n * 4 bytes)
+peer SID? - peer session ID (only if n > 0)
+seq - sequence number
+```
+
+The session IDs are opaque (random 64 bit) values for identifying the TLS
+session. Each peer uses a separate counter for the sequence numbers starting at
+0. The control packets must be sequential, with the gap-free sequence number
+monotonically increasing.
+
+### TLS auth header
+
+The TLS auth header contains a hmac and a replay id (also known as replay
+packet id in OpenVPN, consisting of a 4 byte id and a 4 byte timestamp), which
+are put just after the own session ID. The size of the hmac depends on the hmac
+algorithm being used - configured by the `auth` directive. The hmac key is the
+same length as the hmac output, it is pre-shared between all clients and the
+server.
+
+```
+ h .---own SID---. hmac .-rID-. .-time. n ack .-peer SID?-. .-seq-.
++-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
+| | | | | | | | | |....| | | | | | | | | |...| | | | | | | | | | | |
++-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+The replay ID is used to prevent replay attacks (where someone sends a
+captured packet back a second time), and must be incremented for each packet
+sent.
+
+The hmac is computed over the pseudo-header consisting of:
+- rID - the replay ID (a 4 byte ID)
+- time (4 byte timestamp in seconds since UNIX epoch)
+- one-byte header
+- own session ID
+- n - the number of ACKed sequence numbers
+- list of acked sequence numbers
+- peer session ID (if n > 0)
+- sequence number
+
+When the hmac does not match, an implementation must discard the packet.
+
 
 ### Operations
 
@@ -214,48 +312,6 @@ data channel packets. OpenVPN currently implements two key methods:
 
 The second method is preferred method and is the default for OpenVPN 2.0+. In
 this document, **only** the second method will be mentioned.
-
-All operations apart from DATA share a common header which describe a
-_session ID_:
-- local SID - 8 bytes: it's a random 64 bit value to identify TLS session. The
-  TLS server side uses a HMAC of the client to create a pseudo random number for
-  a SYN Cookie like approach.
-- hmac - 20 bytes (depending on hash algo, commonly SHA1)
-- packet id - 4 bytes
-- timestamp - 4 bytes (seconds since Unix epoch). The specification says that
-  this field is optional.
-- acked packet-IDs array length - 1 byte
-- acked packet-IDs - length * 4 bytes
-- remote SID - 8 bytes (only if acked length > 0)
-- TLS payload (only in control messages)
-
-NOTE: For more details, the `protocol_dump` function in `src/openvpn/ssl.c`
-specifies the packet format.
-
-They consist of: local session ID, HMAC signature, packet ID, timestamp, acked
-packet IDs, remote session ID (only present if acked packet IDs is non-empty),
-message ID, TLS payload.
-
-```
-+-+
-| | = 1 byte
-+-+
-
-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-
-| | | | | | | | | ... | | | | | | | | | | ... | | | | | | | | | ...
-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-+-   -+-+-+-+-+-+-+-+-+-
-|               |     |       |       | |     |               |
-|SID            |HMAC |PKT-ID |TIME   |L|ARR  |Remote SID     |TLS Payload
-
-SID: local session ID
-HMAC: 20 bytes if SHA1 is used
-PKT-ID: packet ID
-TIME: timestamp
-L: length of the packet IDs array
-ARR: 4 bytes * L
-Remote SID: remote session ID
-TLS Payload: only for CONTROL message
-```
 
 ## Handshake protocol
 

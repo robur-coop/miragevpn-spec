@@ -169,11 +169,12 @@ implicit IV (from the ephemeral keys). As associated data the replay id is used.
 
 The purpose of the control channel is to negotiate ephemeral keys, authenticate,
 and negotiation of other settings (timeouts, rekeying intervals, IP addresses,
-..) of the tunnel. The control channel can be authenticated and encrypted using
-several mechanisms described below. Initially, a TLS connection is established
-over the control channel, and then parameters are negotiated. The authentication
-can be via X.509 client certificates (as part of the TLS handshake) or username
-and password (once the TLS session is established).
+..) of the tunnel. The control channel can be *further* authenticated and
+encrypted using several mechanisms described below. Initially, a TLS connection
+is established over the control channel, and then parameters are negotiated.
+The client authentication can be via X.509 client certificates (as part of the
+TLS handshake) or username and password (once the TLS session is established).
+The server is always authenticated via an X.509 server certificate.
 
 ### Authentication and encryption of the control channel
 

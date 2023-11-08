@@ -64,6 +64,27 @@ For the static mode, only AES-256-CBC is supported (configuration directive
 For the tls mode, only AEAD ciphers are supported, namely AES-128-GCM,
 AES-256-GCM, and CHACHA20-POLY1305 (configuration directive `data-ciphers`).
 
+### Terminology
+
+#### OpenVPN replay packet id - MirageVPN replay id
+
+OpenVPN defines a "replay_packet_id", which is a uint32 value, usually combined
+with another uint32 value, the timestamp. The purpose of this is that an
+attacker is not able to replay a packet to the client or server. The invariant
+is that the replay packet id must increase for each packet being sent. We use
+the term "replay ID" for the uint32 counter, and always treat the timestamp
+separately.
+
+#### OpenVPN packet id - MirageVPN sequence number
+
+OpenVPN defines the term "packet id" as a uint32 value which is part of every
+control packet (apart from acknowledgements). The purpose is to have a strict
+gap-free sequence of control packets (especially when using UDP and
+retransmissions are necessary).
+
+We use (due to confusion with "replay packet id") the term sequence number for
+this monotonically increasing number that is attached to control packets.
+
 ## Transport
 
 If TCP is used as transport, the header is prefixed by a two-byte length field.
@@ -141,12 +162,12 @@ CBC; or with an AEAD cipher) and encrypted.
 ### CBC
 
 The packet consists of:
-- the hmac over the IV and the encrypted packet (depends on the hmac algorithm),
+- the hmac over IV and encrypted packet (configured by the `auth` directive),
 - the IV for the packet (16 byte),
 - and the encrypted packet.
 
 The encrypted packet consists of:
-- replay ID (4 byte) - also named replay packet ID in OpenVPN,
+- replay ID (4 byte)
 - timestamp (only in static mode, 4 byte - seconds since UNIX epoch),
 - and the data.
 
@@ -158,7 +179,7 @@ is already aligned to the block size, an entire block will be appended.
 ### AEAD
 
 The packet consists of:
-- replay ID (4 byte) - also named replay packet ID in OpenVPN,
+- replay ID (4 byte)
 - authentication tag (16 byte),
 - and the data.
 
@@ -232,9 +253,9 @@ seq - sequence number
 ```
 
 The session IDs are opaque (random 64 bit) values for identifying the TLS
-session. Each peer uses a separate counter for the sequence numbers (also named
-packet id in OpenVPN), starting at 0. The control packets must be sequential,
-with the gap-free sequence number monotonically increasing.
+session. Each peer uses a separate counter for the sequence numbers starting at
+0. The control packets must be sequential, with the gap-free sequence number
+monotonically increasing.
 
 ### TLS auth header
 
@@ -246,7 +267,7 @@ same length as the hmac output, it is pre-shared between all clients and the
 server.
 
 ```
- h .---own SID---. hmac .--replay ID--. n ack .-peer SID?-. .-seq-.
+ h .---own SID---. hmac .-rID-. .-time. n ack .-peer SID?-. .-seq-.
 +-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
 | | | | | | | | | |....| | | | | | | | | |...| | | | | | | | | | | |
 +-+-+-+-+-+-+-+-+-+....+-+-+-+-+-+-+-+-+-+...+-+-+-+-+-+-+-+-+-+-+-+
@@ -257,7 +278,8 @@ captured packet back a second time), and must be incremented for each packet
 sent.
 
 The hmac is computed over the pseudo-header consisting of:
-- replay ID (a 4 byte ID and 4 byte timestamp)
+- rID - the replay ID (a 4 byte ID)
+- time (4 byte timestamp in seconds since UNIX epoch)
 - one-byte header
 - own session ID
 - n - the number of ACKed sequence numbers
@@ -266,7 +288,6 @@ The hmac is computed over the pseudo-header consisting of:
 - sequence number
 
 When the hmac does not match, an implementation must discard the packet.
-
 
 
 ### Operations

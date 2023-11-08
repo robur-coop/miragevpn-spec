@@ -226,7 +226,7 @@ The plain header is shown below:
 h - one byte header (described above)
 own SID - own session ID
 n - number of ACKed sequence numbers
-ack - list of ACKed sequence numbers (length is n * 4)
+ack - list of ACKed sequence numbers (length is n * 4 bytes)
 peer SID? - peer session ID (only if n > 0)
 seq - sequence number
 ```
@@ -253,7 +253,8 @@ server.
 ```
 
 The replay ID is used to prevent replay attacks (where someone sends a
-captured back a second time), and must be incremented for each packet sent.
+captured packet back a second time), and must be incremented for each packet
+sent.
 
 The hmac is computed over the pseudo-header consisting of:
 - replay ID (a 4 byte ID and 4 byte timestamp)

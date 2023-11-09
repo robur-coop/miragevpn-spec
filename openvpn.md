@@ -181,7 +181,7 @@ is already aligned to the block size, an entire block will be appended.
 The packet consists of:
 - replay ID (4 byte)
 - authentication tag (16 byte),
-- and the data.
+- and the encrypted data.
 
 The nonce is 12 byte long, and consists of the replay id prepended to the
 implicit IV (from the ephemeral keys). As associated data the replay id is used.

@@ -323,6 +323,89 @@ the tunnel. Multiple keys may be active at the same time, which is especially
 useful for handing over from old keys to new keys without loosing in-flight
 data.
 
+### Data channel key exchange
+
+After the TLS session is established the client sends a key exchange message and the server responds with another key exchange message over the TLS-encrypted control channel.
+There are two current mechanisms to actually derive keys: TLS PRF-based (being deprecated) and TLS-EKM.
+In both cases the same key exchange message is used:
+
+<!-- TODO: we should be more consistent in how we diagram this -->
+```
+string := {
+  length - 2 bytes;
+  characters - length bytes (including terminating NUL byte);
+}
+
+key_exchange := {
+  zeroes - 4 bytes;
+  key method - 1 byte;
+  pre master (server-only) - 48 bytes;
+  random1 - 32 bytes;
+  random2 - 32 bytes;
+  opt - string;
+  user - string;
+  password - string;
+  peerinfo - string;
+}
+```
+
+The message starts with a fixed 4 NUL bytes.
+The key method is 2.
+<!-- TODO: pre master ?! -->
+`pre_master` is 48 random bytes and is only sent by the server; the client omits this field.
+`random1` and `random2` are 32 random bytes each.
+The remainder are strings encoded using a 2 byte length field followed by a NUL-terminated byte sequence.
+The length is a 16 bit big endian integer.
+The empty string can be encoded as a 0 length byte sequence - which then is not NUL-terminated - or a 1 length byte sequence consisting of the NUL byte.
+`opt` is a string of options and is falling out of favor.
+The `user` and `password` strings are used for user & pass phrase authentication.
+The length of those fields are 0 if password authentication is not used or in the server's key exchange message.
+Finally, peerinfo is a string of key=value bindings separated by line feed (`\n`).
+Only the client sends peerinfo; the server will use a value of length 0.
+
+#### Peerinfo
+The peerinfo mechanism is used to communicate to the server some information about the client.
+Some important options are:
+
+- `IV_PROTO` is important and is a decimal integer which is to be interpreted as a bit field.
+  The most relevant bits in the bit field are:
+  * bit 0: Reserved and should be 0.
+  * bit 2: Request push. The client can set this bit to inform the server that it can send the [`PUSH_REPLY`](#push-request) without waiting for the client to send a `PUSH_REQUEST` message.
+  * bit 3: The client supports TLS key material exporters (TLS-EKM). This is used to negotiate the key derivation mechanism used in [data channel cipher negotiation](#data-channel-cipher-negotation).
+  * bit 7: The client can send the control channel [`EXIT`](#control-channel-exit) message. This also means the client will support the [`protocol-flags`](#protocol-flags) config option in a push reply. Notably, the `protocol-flags` push reply option will be used to signal tls-ekm support instead of `key-derivation` push reply option.
+- `IV_CIPHERS` is as well important and used for [data channel cipher negotiation](#data-channel-cipher-negotation). The client lists what ciphers it supports. The server then one of the ciphers and informs the client in a [`PUSH_REPLY`](#push-request) or aborts the connection if no suitable cipher was found.
+
+### Data channel cipher negotiation
+
+There are two parts of data channel cipher negotiation: negotiating the way to derive the key material, and negotiating the cipher to use.
+
+#### Negotiating key material
+
+There are two current mechanisms to derive key material:
+- the old way using TLS 1.0(?) PRF function
+- the new way using TLS key material exporters (TLS-EKM)
+
+The old way uses the random bytes `pre_master` from the server and `random1` and `random2` from both parties.
+TODO: more details.
+This is the default unless TLS-EKM is negotiated.
+
+The new way uses the key material exporters mechanism of TLS (TODO: what is minimum TLS version?).
+The client signals support for TLS EKM by setting bit 3 in [`IV_PROTO`](#peerinfo).
+The server, if the client supports TLS EKM, replies with a [`PUSH_REPLY`](#push-request) with `key-derivation tls-ekm` or `protocol-flags` with `tls-ekm`.
+The label `EXPORTER-OpenVPN-datakeys` is used to derive the keys.
+
+#### Negotiating cipher
+
+The client signals supported ciphers by sending the [peerinfo](#peerinfo) key `IV_CIPHERS` with a colon-separated (`:`) list of ciphers.
+The client may as well send the peerinfo key-value`IV_NCP=2` which means the client supports both AES 128 GCM and AES 256 GCM.
+`IV_NCP=2` is deprecated in favor of `IV_CIPHERS`.
+`IV_NCP=2` can be set in addition to `IV_CIPHERS` for compatibility with older implementations.
+
+The server decides a cipher from the intersection of the client's ciphers and the servers `--data-ciphers`.
+The server SHOULD choose the first cipher in its `--data-ciphers` list that the client supports.
+If there are no ciphers in commen the server sends a [`AUTH_FAILED`](#auth_failed) control channel message.
+Otherwise, the server sends to the client the chosen cipher in a [`PUSH_REPLY`](#push-request) control channel message using the `cipher` option.
+
 ## Configuration parameters and their interaction
 
 For initializing a tunnel, first a remote must be selected from the

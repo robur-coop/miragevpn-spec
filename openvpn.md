@@ -11,7 +11,7 @@ document, nor in the implementation itself.
 
 The development of MirageVPN and this document was funded by
 [Prototypefund](https://prototypefund.de) in 2019 - the German ministry for
-research and education, and by NLnet in 2023 (via the December 2022 EU NGI
+research and education, and by NLnet in 2023/2024 (via the December 2022 EU NGI
 Assure call).
 
 ## Protocol overview
@@ -339,7 +339,7 @@ string := {
 key_exchange := {
   zeroes - 4 bytes;
   key method - 1 byte;
-  pre master (server-only) - 48 bytes;
+  pre master (only sent by client) - 48 bytes;
   random1 - 32 bytes;
   random2 - 32 bytes;
   opt - string;
@@ -351,8 +351,8 @@ key_exchange := {
 
 The message starts with a fixed 4 NUL bytes.
 The key method is 2.
-<!-- TODO: pre master ?! -->
-`pre_master` is 48 random bytes and is only sent by the server; the client omits this field.
+
+`pre_master` is 48 random bytes and is only sent by the client; the server omits this field.
 `random1` and `random2` are 32 random bytes each.
 The remainder are strings encoded using a 2 byte length field followed by a NUL-terminated byte sequence.
 The length is a 16 bit big endian integer.
@@ -382,14 +382,21 @@ There are two parts of data channel cipher negotiation: negotiating the way to d
 #### Negotiating key material
 
 There are two current mechanisms to derive key material:
-- the old way using TLS 1.0(?) PRF function
+- the old way using TLS 1.0 pseudo-random function (TLS-PRF)
 - the new way using TLS key material exporters (TLS-EKM)
 
-The old way uses the random bytes `pre_master` from the server and `random1` and `random2` from both parties.
-TODO: more details.
+#### PRF
+
+The TLS-PRF uses the pseudo-random function defined by the TLS 1.0 RFC (RFC 2246) with the `pre_master` (selected by the client) as secret, and random data (concatenation of `random1` from both server and client) as seed. This results in the `master_key` (48 bytes).
+
+The actual key material is then computed using the same pseudo-random function with the just computed `master_key` as secret, as seed the concatenation of both `random2` from server and client, together with the session ids.
+
 This is the default unless TLS-EKM is negotiated.
 
-The new way uses the key material exporters mechanism of TLS (TODO: what is minimum TLS version?).
+#### EKM
+
+The new way uses the key material exporters mechanism of TLS, as defined in  RFC 5705 (for TLS 1.0 - 1.2, TLS 1.3 has a different computation).
+
 The client signals support for TLS EKM by setting bit 3 in [`IV_PROTO`](#peerinfo).
 The server, if the client supports TLS EKM, replies with a [`PUSH_REPLY`](#push-request) with `key-derivation tls-ekm` or `protocol-flags` with `tls-ekm`.
 The label `EXPORTER-OpenVPN-datakeys` is used to derive the keys.
@@ -497,7 +504,10 @@ Apparently they mean big endian, so in other words you use the first *K*/8 bytes
 
 OpenVPN operates with a sense of direction for the keys.
 This means that one key pair is used for encrypting and authenticating remote packets and the other is used for the local packets.
-**TODO:** figure out what direction 0 and 1 means for the key pairs.
+
+The key direction 0 means that the first half of the key block is used for sending, and the second half is used fo receiving. The key direction 1 means the opposite. If no key direction is specified, both sending and receiving use the first half of the key block.
+
+In a setup, either there should be no key direction specified, or one side has 1, the other 0. Otherwise communication won't succeed.
 
 ### File format
 

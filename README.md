@@ -14,6 +14,12 @@ The development of MirageVPN and this document was funded by
 research and education, and by NLnet in 2023/2024 (via the December 2022 EU NGI
 Assure call).
 
+In the meantime, there is a [OpenVPN-RFC](https://github.com/openvpn/openvpn-rfc)
+effort which provides protocol documentation.
+
+This is a live document which we will extend whenever we add new protocol
+features to MirageVPN or we discover corner cases in the protocol.
+
 ## Protocol overview
 
 OpenVPN establishes a mutually authenticated tunnel between two endpoints. The
@@ -37,8 +43,8 @@ dynamic IP address configuration is needed.
 
 ## Implementation choices
 
-We do not support all features of OpenVPN - while we strive to support more
-features, some of the features we will never support:
+We do not support all features of OpenVPN currently. While we strive to support
+more features, there are features we don't plan to support:
 
 ### Compression
 
@@ -475,6 +481,7 @@ The protocol works like that:
 7) Client and server use `Kc` for any data through the control channel
 
 ### Metadata
+
 The metadata in `wKc` comes in two types tagged with a single byte:
 - `USER`/`0x00` - user-defined data, and
 - `TIMESTAMP`/`0x01` - 64-bit unix timestamp
@@ -496,6 +503,7 @@ As well for `Ka` only the first *M* bytes are used as key for the hmac where *M*
 For SHA1 the key size is 20 bytes, for example.
 
 ### Endianness
+
 The OpenVPN documentation sometimes says to use the *K* most significant bits as key.
 This is slightly confusing as they never mention the endianness.
 Apparently they mean big endian, so in other words you use the first *K*/8 bytes as key.

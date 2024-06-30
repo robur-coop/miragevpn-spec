@@ -11,8 +11,9 @@ document, nor in the implementation itself.
 
 The development of MirageVPN and this document was funded by
 [Prototypefund](https://prototypefund.de) in 2019 - the German ministry for
-research and education, and by NLnet in 2023/2024 (via the December 2022 EU NGI
-Assure call).
+research and education, and by [NLnet](https://nlnet.nl) in 2023/2024 (via the
+December 2022 EU [NGI Assure](https://www.assure.ngi.eu/) call). Learn more at
+the [NLnet project page](https://nlnet.nl/project/MirageVPN).
 
 In the meantime, there is a [OpenVPN-RFC](https://github.com/openvpn/openvpn-rfc)
 effort which provides protocol documentation.
